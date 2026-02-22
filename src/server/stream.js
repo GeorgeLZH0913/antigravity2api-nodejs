@@ -224,7 +224,7 @@ function getUpstreamRetryDelayMs(error) {
 }
 
 function computeBackoffMs(attempt, explicitDelayMs) {
-  // attempt starts from 0 for first call; on first retry attempt=1
+  // attempt starts from 0 for first call; on first retry attempt = 1
   const maxMs = 20_000;
   const hasExplicit = Number.isFinite(explicitDelayMs) && explicitDelayMs !== null;
   const baseMs = hasExplicit ? Math.max(0, Math.floor(explicitDelayMs)) : 500;
@@ -232,16 +232,18 @@ function computeBackoffMs(attempt, explicitDelayMs) {
 
   // Add small jitter to spread bursts (±20%)
   const jitterFactor = 0.8 + Math.random() * 0.4;
-  const expJittered = Math.max(0, Math.floor(exp * jitterFactor));
+
+  // First retry adds 1s; subsequent retries add 4s protection
+  const protectionMs = attempt === 1 ? 1000 : attempt > 1 ? 4000 : 0;
+  const backoff = Math.floor((exp + protectionMs) * jitterFactor);
 
   if (hasExplicit) {
     // Add a small safety buffer to avoid retrying slightly too early
-    const buffered = Math.max(0, Math.floor(explicitDelayMs + 50));
-    return Math.min(maxMs, Math.max(expJittered, buffered));
+    return Math.min(maxMs, Math.max(backoff, Math.floor(explicitDelayMs + 50)));
   }
 
-  // Fallback: at least 0.5s for the first retry
-  return Math.min(maxMs, Math.max(500, expJittered));
+  // Fallback: ensure reasonable delay even without explicit delay
+  return Math.min(maxMs, Math.max(8000, backoff));
 }
 
 /**
