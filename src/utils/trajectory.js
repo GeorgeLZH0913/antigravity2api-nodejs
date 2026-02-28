@@ -1,5 +1,8 @@
 import { randomUUID } from "crypto";
 import { QA_PAIRS } from "../constants/index.js"
+import { generateCreatedAt } from "./utils.js"
+import config from '../config/config.js';
+
 
 let deviceId = randomUUID();
 function generateMetadata() {
@@ -9,19 +12,12 @@ function generateMetadata() {
     extensionPath: "d:\\Antigravity\\resources\\app\\extensions\\antigravity",
     hardware: "amd64",
     ideName: "antigravity",
-    ideVersion: "1.18.3",
+    ideVersion: config.api.ideVersion,
     locale: "en",
     os: "windows",
     regionCode: "CN",
     userTierId: "g1-pro-tier"
   }
-}
-
-function generateCreatedAt() {
-  const now = new Date();
-  const isoString = now.toISOString();
-  const nanos = String(now.getMilliseconds()).padStart(3, '0') + '000000';
-  return isoString.replace(/\.\d{3}Z$/, `.${nanos}Z`);
 }
 
 function getRandomQAPair(num) {
@@ -36,7 +32,7 @@ function generateExecutorMetadatas() {
     }
   ]
 }
-function generateGeneratorMetadata(executionId, num) {
+function generateGeneratorMetadata(executionId, num, modelName) {
   const qaPair = getRandomQAPair(num);
   return [
     {
@@ -457,7 +453,7 @@ function generateGeneratorMetadata(executionId, num) {
             model: "MODEL_PLACEHOLDER_M18"
           },
           maxOutputTokens: 16384,
-          modelName: "claude-opus-4-6-thinking",
+          modelName: modelName,
           noToolExplanation: true,
           noToolSummary: true,
           noWaitForPreviousTools: false,
@@ -905,14 +901,14 @@ function generateSteps(executionId, trajectoryId, cascadeId, num) {
   ]
 }
 
-function generateTrajectorybody(num, trajectoryId) {
+function generateTrajectorybody(num, trajectoryId, modelName) {
   let cascadeId = randomUUID();
   let executionId = randomUUID();
   return {
     trajectory: {
       cascadeId: cascadeId,
       executorMetadatas: generateExecutorMetadatas(),
-      generatorMetadata: generateGeneratorMetadata(executionId, num),
+      generatorMetadata: generateGeneratorMetadata(executionId, num, modelName),
       metadata: {
         createdAt: generateCreatedAt(),
         initializationStateId: randomUUID()

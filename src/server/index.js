@@ -10,7 +10,7 @@ import path from 'path';
 import { closeRequester } from '../api/client.js';
 import logger from '../utils/logger.js';
 import logWsServer from '../utils/logWsServer.js';
-import config from '../config/config.js';
+import config, { checkAndUpdateVersion } from '../config/config.js';
 import memoryManager from '../utils/memoryManager.js';
 import { getPublicDir, getRelativePath } from '../utils/paths.js';
 import { errorHandler } from '../utils/errors.js';
@@ -196,6 +196,9 @@ app.use((req, res, next) => {
 // ==================== 服务器启动 ====================
 const server = app.listen(config.server.port, config.server.host, () => {
   logger.info(`服务器已启动: ${config.server.host}:${config.server.port}`);
+
+  // 启动时检查版本更新
+  checkAndUpdateVersion();
 
   // 初始化 WebSocket 日志服务
   logWsServer.initialize(server);

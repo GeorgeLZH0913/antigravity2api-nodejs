@@ -9,7 +9,7 @@ const router = express.Router();
 // 静态数据
 const SD_MOCK_DATA = {
   options: {
-    sd_model_checkpoint: 'gemini-3-pro-image',
+    sd_model_checkpoint: 'gemini-3.1-flash-image',
     sd_vae: 'auto',
     CLIP_stop_at_last_layers: 1
   },
@@ -71,7 +71,7 @@ const SD_MOCK_DATA = {
 // 构建图片生成请求体
 function buildImageRequestBody(prompt, token) {
   const messages = [{ role: 'user', content: prompt }];
-  const requestBody = generateRequestBody(messages, 'gemini-3-pro-image', {}, null, token);
+  const requestBody = generateRequestBody(messages, 'gemini-3.1-flash-image', {}, null, token);
   return prepareImageRequest(requestBody);
 }
 
@@ -137,7 +137,7 @@ router.post('/img2img', async (req, res) => {
     
     const messages = [{ role: 'user', content }];
     const requestBody = prepareImageRequest(
-      generateRequestBody(messages, 'gemini-3-pro-image', {}, null, token)
+      generateRequestBody(messages, 'gemini-3.1-flash-image', {}, null, token)
     );
     
     const images = await generateImageForSD(requestBody, token);

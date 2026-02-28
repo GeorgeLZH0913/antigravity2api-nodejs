@@ -105,7 +105,7 @@ const QUOTA_GROUPS = [
         key: 'banana',
         label: 'banana',
         iconSrc: '/assets/icons/banana.svg',
-        match: (modelId) => modelId.toLowerCase().includes('gemini-3-pro-image')
+        match: (modelId) => modelId.toLowerCase().includes('gemini-3.1-flash-image')
     },
     {
         key: 'gemini',

@@ -1,12 +1,7 @@
 import { randomUUID } from "crypto";
 import { FRONT_END, CLIENT_FEATURS_REGISTER } from "../constants/oauth.js"
-
-function generateCreatedAt() {
-  const now = new Date();
-  const isoString = now.toISOString();
-  const nanos = String(now.getMilliseconds()).padStart(3, '0') + '000000';
-  return isoString.replace(/\.\d{3}Z$/, `.${nanos}Z`);
-}
+import { generateCreatedAt } from "./utils.js"
+import config from '../config/config.js'
 
 export function buildClientRegister(token) {
   return {
@@ -42,7 +37,7 @@ export function buildFrontEnd(token) {
       userId: token.access_token,
       properties: {
         ide: "antigravity",
-        ideVersion: "1.18.3",
+        ideVersion: config.api.ideVersion,
         extensionVersion: "",
         disableTelemetry: "false",
         invocationId: randomUUID(),

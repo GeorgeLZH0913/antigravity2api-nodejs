@@ -31,7 +31,6 @@ import { getUpstreamStatus, readUpstreamErrorBody, isCallerDoesNotHavePermission
 import { createStreamLineProcessor } from './streamLineProcessor.js';
 import { runAxiosSseStream, runNativeSseStream, postJsonAndParse } from './geminiTransport.js';
 import { parseGeminiCandidateParts, toOpenAIUsage } from './geminiResponseParser.js';
-import { randomBytes, randomUUID } from 'crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -47,14 +46,14 @@ function getTokenKey(token) {
 function startTokenTimer(token) {
   const key = getTokenKey(token);
   const now = Date.now();
-  sendClientRegister(token).catch(err => logger.warn('定时调用ClientRegister失败:', err.message));
-  sendClientFeature(token).catch(err => logger.warn('定时调用ClientFeature失败:', err.message));
-  sendFrontEnd(token).catch(err => logger.warn('定时调用FrontEnd失败:', err.message));
 
   if (tokenTimers.has(key)) {
     tokenTimers.get(key).lastUsed = now;
     return;
   }
+  sendClientRegister(token).catch(err => logger.warn('定时调用ClientRegister失败:', err.message));
+  sendClientFeature(token).catch(err => logger.warn('定时调用ClientFeature失败:', err.message));
+  sendFrontEnd(token).catch(err => logger.warn('定时调用FrontEnd失败:', err.message));
 
   const intervalId = setInterval(() => {
     sendClientRegister(token).catch(err => logger.warn('定时调用ClientRegister失败:', err.message));
@@ -125,15 +124,16 @@ const DEFAULT_MODELS = Object.freeze([
   'claude-opus-4-6-thinking',
   'claude-sonnet-4-5-thinking',
   'claude-sonnet-4-5',
-  'gemini-3-pro-high',
+  'claude-sonnet-4-6-thinking',
+  'gemini-3.1-pro-high',
   'gemini-2.5-flash-lite',
-  'gemini-3-pro-image',
-  'gemini-3-pro-image-4K',
-  'gemini-3-pro-image-2K',
+  'gemini-3.1-flash-image',
+  'gemini-3.1-flash-image-4K',
+  'gemini-3.1-flash-image-2K',
   'gemini-2.5-flash-thinking',
   'gemini-2.5-pro',
   'gemini-2.5-flash',
-  'gemini-3-pro-low',
+  'gemini-3.1-pro-low',
   'chat_20706',
   'rev19-uic3-1p',
   'gpt-oss-120b-medium',
@@ -231,6 +231,7 @@ async function handleApiError(error, token, dumpId = null) {
 export async function generateAssistantResponse(requestBody, token, callback) {
   startTokenTimer(token);
   const trajectoryId = requestBody.requestId.split('/')[2];
+  const modelName = requestBody.model;
   const headers = buildHeaders(token);
   const dumpId = isDebugDumpEnabled() ? createDumpId('stream') : null;
   const streamCollector = dumpId ? createStreamCollector() : null;
@@ -275,7 +276,7 @@ export async function generateAssistantResponse(requestBody, token, callback) {
       await dumpStreamResponse(dumpId, streamCollector);
     }
     sendRecordCodeAssistMetrics(token, trajectoryId).catch(err => logger.warn('发送RecordCodeAssistMetrics失败:', err.message));
-    sendRecordTrajectoryAnalytics(token, num, trajectoryId).catch(err => logger.warn('发送轨迹分析失败:', err.message));
+    sendRecordTrajectoryAnalytics(token, num, trajectoryId, modelName).catch(err => logger.warn('发送轨迹分析失败:', err.message));
     //sendLog(token,num,trajectoryId).catch(err => logger.warn('发送log失败:', err.message))
   } catch (error) {
     try { processor.close(); } catch { }
@@ -391,6 +392,7 @@ export async function getModelsWithQuotas(token) {
 export async function generateAssistantResponseNoStream(requestBody, token) {
   startTokenTimer(token);
   const trajectoryId = requestBody.requestId.split('/')[2];
+  const modelName = requestBody.model;
   const headers = buildHeaders(token);
   const dumpId = isDebugDumpEnabled() ? createDumpId('no_stream') : null;
   let num = Math.floor(Math.random() * QA_PAIRS.length);
@@ -411,7 +413,7 @@ export async function generateAssistantResponseNoStream(requestBody, token) {
       rawFormat: 'json'
     });
     sendRecordCodeAssistMetrics(token, trajectoryId).catch(err => logger.warn('发送RecordCodeAssistMetrics失败:', err.message));
-    sendRecordTrajectoryAnalytics(token, num, trajectoryId).catch(err => logger.warn('发送轨迹分析失败:', err.message));
+    sendRecordTrajectoryAnalytics(token, num, trajectoryId, modelName).catch(err => logger.warn('发送轨迹分析失败:', err.message));
 
     //sendLog(token,num).catch(err => logger.warn('发送log失败:', err.message))
   } catch (error) {
@@ -470,6 +472,7 @@ export async function generateAssistantResponseNoStream(requestBody, token) {
 export async function generateImageForSD(requestBody, token) {
   startTokenTimer(token);
   const trajectoryId = requestBody.requestId.split('/')[2];
+  const modelName = requestBody.model;
   const headers = buildHeaders(token);
   let data;
   let num = Math.floor(Math.random() * QA_PAIRS.length);
@@ -485,7 +488,7 @@ export async function generateImageForSD(requestBody, token) {
         data: requestBody
       })).data;
       sendRecordCodeAssistMetrics(token, trajectoryId).catch(err => logger.warn('发送RecordCodeAssistMetrics失败:', err.message));
-      sendRecordTrajectoryAnalytics(token, num, trajectoryId).catch(err => logger.warn('发送轨迹分析失败:', err.message));
+      sendRecordTrajectoryAnalytics(token, num, trajectoryId, modelName).catch(err => logger.warn('发送轨迹分析失败:', err.message));
       //sendLog(token,num).catch(err => logger.warn('发送log失败:', err.message));
     } else {
       const response = await requester.antigravity_fetch(config.api.noStreamUrl, buildRequesterConfig(headers, requestBody));
@@ -494,13 +497,13 @@ export async function generateImageForSD(requestBody, token) {
         throw { status: response.status, message: errorBody };
       }
       data = await response.json();
-      sendRecordCodeAssistMetrics(token, trajectoryId).catch(err => logger.warn('发送RecordCodeAssistMetrics失败:', err.message));
-      sendRecordTrajectoryAnalytics(token, num, trajectoryId).catch(err => logger.warn('发送轨迹分析失败:', err.message));
       //sendLog(token,num).catch(err => logger.warn('发送log失败:', err.message));
     }
   } catch (error) {
     await handleApiError(error, token);
   }
+  sendRecordCodeAssistMetrics(token, trajectoryId).catch(err => logger.warn('发送RecordCodeAssistMetrics失败:', err.message));
+  sendRecordTrajectoryAnalytics(token, num, trajectoryId, modelName).catch(err => logger.warn('发送轨迹分析失败:', err.message));
 
   const parts = data.response?.candidates?.[0]?.content?.parts || [];
   const images = parts.filter(p => p.inlineData).map(p => p.inlineData.data);
@@ -508,8 +511,8 @@ export async function generateImageForSD(requestBody, token) {
   return images;
 }
 
-export async function sendRecordTrajectoryAnalytics(token, num, trajectoryId) {
-  const trajectorybody = generateTrajectorybody(num, trajectoryId);
+export async function sendRecordTrajectoryAnalytics(token, num, trajectoryId, modelName = "claude-opus-4-6-thinking") {
+  const trajectorybody = generateTrajectorybody(num, trajectoryId, modelName);
   const headers = buildHeaders(token);
   try {
     if (useAxios) {
@@ -566,12 +569,12 @@ export async function sendRecordCodeAssistMetrics(token, trajectoryId) {
     if (useAxios) {
       await httpRequest({
         method: 'POST',
-        url: "https://daily-cloudcode-pa.googleapis.com/v1internal:recordCodeAssistMetrics",
+        url: config.api.recordCodeAssistMetrics,
         headers,
         data: requestBody
       });
     } else {
-      const response = await requester.antigravity_fetch("https://daily-cloudcode-pa.googleapis.com/v1internal:recordCodeAssistMetrics", buildRequesterConfig(headers, requestBody));
+      const response = await requester.antigravity_fetch(config.api.recordCodeAssistMetrics, buildRequesterConfig(headers, requestBody));
       if (response.status !== 200) {
         const errorBody = await response.text();
         throw new Error(`RecordCodeAssistMetrics请求失败 (${response.status}): ${errorBody}`);
@@ -589,12 +592,12 @@ export async function sendClientRegister(token) {
     if (useAxios) {
       await httpRequest({
         method: 'POST',
-        url: "https://antigravity-unleash.goog/api/client/register",
+        url: config.api.unleash.register,
         headers,
         data: requestBody
       });
     } else {
-      const response = await requester.antigravity_fetch("https://antigravity-unleash.goog/api/client/register", buildRequesterConfig(headers, requestBody));
+      const response = await requester.antigravity_fetch(config.api.unleash.register, buildRequesterConfig(headers, requestBody));
       if (response.status !== 200 && response.status !== 202) {
         const errorBody = await response.text();
         throw new Error(`ClientRegister请求失败 (${response.status}): ${errorBody}`);
@@ -612,11 +615,11 @@ export async function sendClientFeature(token) {
     if (useAxios) {
       await httpRequest({
         method: 'GET',
-        url: "https://antigravity-unleash.goog/api/client/features",
+        url: config.api.unleash.features,
         headers
       });
     } else {
-      const response = await requester.antigravity_fetch("https://antigravity-unleash.goog/api/client/features", buildRequesterConfig(headers, null, "GET"));
+      const response = await requester.antigravity_fetch(config.api.unleash.features, buildRequesterConfig(headers, null, "GET"));
       if (response.status !== 200 && response.status !== 202) {
         const errorBody = await response.text();
         throw new Error(`ClientFeature请求失败 (${response.status}): ${errorBody}`);
@@ -634,12 +637,12 @@ export async function sendFrontEnd(token) {
     if (useAxios) {
       await httpRequest({
         method: 'POST',
-        url: "https://antigravity-unleash.goog/api/frontend",
+        url: config.api.unleash.frontend,
         headers,
         data: requestBody
       });
     } else {
-      const response = await requester.antigravity_fetch("https://antigravity-unleash.goog/api/frontend", buildRequesterConfig(headers, requestBody));
+      const response = await requester.antigravity_fetch(config.api.unleash.frontend, buildRequesterConfig(headers, requestBody));
       if (response.status !== 200 && response.status !== 202) {
         const errorBody = await response.text();
         throw new Error(`FrontEnd请求失败 (${response.status}): ${errorBody}`);
