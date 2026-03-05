@@ -45,7 +45,7 @@ const EXCLUDED_KEYS = new Set([
   // Gemini API 不支持的高级 JSON Schema 字段
   'propertyNames', 'patternProperties', 'dependencies',
   'if', 'then', 'else', 'not', 'contentMediaType', 'contentEncoding',
-  'definitions', '$defs', '$ref', '$id', '$comment'
+  'definitions', '$defs', '$ref', '$id', '$comment', 'undefined'
 ]);
 
 // 需要转换为大写的 type 值映射

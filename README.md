@@ -2,6 +2,10 @@
 
 将 Google Antigravity API 转换为 OpenAI 兼容格式的代理服务，支持流式响应、工具调用和多账号管理。
 
+## 🌟 Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=liuw1535/antigravity2api-nodejs&type=Date)](https://www.star-history.com/#liuw1535/antigravity2api-nodejs&Date)
+
 ## 功能特性
 
 - ✅ OpenAI API 兼容格式

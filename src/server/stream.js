@@ -354,6 +354,12 @@ export async function with429Retry(fn, maxRetries, options = {}, legacyOnAttempt
 
         // 检查是否是长时间冷却（额度耗尽）- 仅 429 触发模型系列禁用
         if (status === 429 && explicitDelayMs !== null && explicitDelayMs >= cooldownThreshold && tokenId && modelId) {
+          // 先检查是否已经被其他并发请求禁用了，避免重复处理
+          if (!tokenCooldownManager.isAvailable(tokenId, modelId)) {
+            // 已经在冷却中，直接抛出错误，不重复处理
+            throw error;
+          }
+
           // 恢复时间超过阈值，触发模型系列禁用
           let finalResetTimestamp = upstreamResetTimestamp;
 

@@ -131,6 +131,12 @@ class TokenCooldownManager {
       this.cooldowns.set(tokenId, groups);
     }
 
+    // 幂等检查：如果已经存在相同或更晚的冷却时间，跳过重复设置
+    const existing = groups[groupKey];
+    if (existing && existing.until && existing.until >= untilTimestamp) {
+      return; // 已有更严格的冷却，无需重复设置
+    }
+
     groups[groupKey] = { until: untilTimestamp };
 
     const resetDate = new Date(untilTimestamp);

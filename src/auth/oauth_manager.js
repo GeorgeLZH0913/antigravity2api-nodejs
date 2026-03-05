@@ -4,9 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import log from '../utils/logger.js';
 import config from '../config/config.js';
-import { generateProjectId } from '../utils/idGenerator.js'; // TODO: 可移除，已不再使用
 import tokenManager from './token_manager.js';
-import geminicliTokenManager from './geminicli_token_manager.js';
 import { OAUTH_CONFIG, OAUTH_SCOPES, GEMINICLI_OAUTH_CONFIG, GEMINICLI_OAUTH_SCOPES } from '../constants/oauth.js';
 import { buildAxiosRequestConfig } from '../utils/httpClient.js';
 import fingerprintRequester from '../requester.js';
@@ -159,18 +157,19 @@ class OAuthManager {
 	async validateAndGetProjectId(accessToken) {
 		try {
 			log.info('正在验证账号资格...');
-			const projectId = await tokenManager.fetchProjectId({ access_token: accessToken });
+			const {projectId,sub} = await tokenManager.fetchProjectId({ access_token: accessToken }) || {};
 
 			if (projectId === undefined || projectId === null) {
 				log.warn('该账号无法获取 projectId，可能无资格或需要稍后重试');
-				return { projectId: null, hasQuota: false };
+				return { projectId: null, hasQuota: false, sub };
 			}
 
 			log.info('账号验证通过，projectId: ' + projectId);
-			return { projectId, hasQuota: true };
+			return { projectId, hasQuota: true, sub };
 		} catch (err) {
 			log.error('验证账号资格失败: ' + err.message);
-			return { projectId: null, hasQuota: false };
+			sub = "free-tier";
+			return { projectId: null, hasQuota: false,sub };
 		}
 	}
 
@@ -204,9 +203,10 @@ class OAuthManager {
 
 		// 3. 资格校验（仅 antigravity 模式需要 projectId）
 		if (mode === 'antigravity') {
-			const { projectId, hasQuota } = await this.validateAndGetProjectId(account.access_token);
+			const { projectId, hasQuota,sub } = await this.validateAndGetProjectId(account.access_token);
 			account.projectId = projectId;
 			account.hasQuota = hasQuota;
+			account.sub = sub;
 		}
 
 		account.enable = true;

@@ -5,8 +5,16 @@ import { getDataDir } from '../utils/paths.js';
 import { QUOTA_CACHE_TTL, QUOTA_CLEANUP_INTERVAL } from '../constants/index.js';
 import { getGroupKey } from '../utils/modelGroups.js';
 
-// 每次请求消耗的额度百分比
+// 每次请求消耗的额度百分比（按模型系列区分）
 const REQUEST_COST_PERCENT = 0.6667;
+
+// 不同模型系列的每次请求消耗百分比
+const GROUP_COST_PERCENT = {
+  claude: 0.6667,
+  gemini: 0.6667,
+  banana: 5.0,    // 图片生成模型消耗更高，约 20 次/满额
+  other: 0.6667
+};
 
 class QuotaManager {
   /**
@@ -80,16 +88,14 @@ class QuotaManager {
     const newResetTimes = {};
     const newRequestCounts = { ...existingRequestCounts };
 
-    // 记录需要重置的组（静默，不打印日志）
-    const silentResetGroups = new Set();
-    // 记录额度真正增加的组（需要打印日志）
-    const quotaIncreasedGroups = new Set();
+    // 记录额度真正重置的组（需要打印日志）
+    const quotaResetGroups = new Set();
 
-    // 记录每个组的最低额度，用于检测额度增加
+    // 记录每个组的最低额度，用于检测额度变化
     const groupMinRemaining = {};
     const existingGroupMinRemaining = {};
 
-    // 计算新数据中每个组的最低额度
+    // 计算新数据中每个组的最低额度和重置时间
     Object.entries(quotas || {}).forEach(([modelId, quotaData]) => {
       const groupKey = getGroupKey(modelId);
       const remaining = quotaData.r || 0;
@@ -101,23 +107,10 @@ class QuotaManager {
       const resetTimeRaw = quotaData.t;
       if (resetTimeRaw) {
         const newResetMs = Date.parse(resetTimeRaw);
-        const oldResetMs = existingResetTimes[groupKey] ? Date.parse(existingResetTimes[groupKey]) : null;
 
         // 更新重置时间（取最早的）
         if (!newResetTimes[groupKey] || newResetMs < Date.parse(newResetTimes[groupKey])) {
           newResetTimes[groupKey] = resetTimeRaw;
-        }
-
-        // 如果重置时间变化（新的重置周期），静默重置计数
-        if (oldResetMs && newResetMs > oldResetMs && !silentResetGroups.has(groupKey)) {
-          newRequestCounts[groupKey] = 0;
-          silentResetGroups.add(groupKey);
-        }
-
-        // 如果当前时间已超过重置时间，也静默重置计数
-        if (newResetMs && Date.now() > newResetMs && existingRequestCounts[groupKey] > 0) {
-          newRequestCounts[groupKey] = 0;
-          silentResetGroups.add(groupKey);
         }
       }
     });
@@ -132,21 +125,36 @@ class QuotaManager {
       }
     });
 
-    // 检测额度增加：如果新的最低额度 > 旧的最低额度，说明额度重置了
+    // 检测额度重置：只有当旧的重置时间已经过去，才认为是真正的额度重置
+    const now = Date.now();
     for (const groupKey of Object.keys(groupMinRemaining)) {
       const newMin = groupMinRemaining[groupKey];
       const oldMin = existingGroupMinRemaining[groupKey];
+      const oldResetTimeRaw = existingResetTimes[groupKey];
+      const oldResetMs = oldResetTimeRaw ? Date.parse(oldResetTimeRaw) : null;
 
-      // 只有当旧数据存在且新额度明显高于旧额度时才标记为额度增加
-      if (oldMin !== undefined && newMin > oldMin + 0.05) {
+      // 条件1: 旧的重置时间已经过去（说明进入了新的额度周期）
+      const resetTimePassed = oldResetMs && Number.isFinite(oldResetMs) && now > oldResetMs;
+
+      // 条件2: 新额度明显高于旧额度（说明额度确实恢复了）
+      const quotaIncreased = oldMin !== undefined && newMin > oldMin + 0.05;
+
+      if (resetTimePassed && existingRequestCounts[groupKey] > 0) {
+        // 重置时间已过，清零计数
         newRequestCounts[groupKey] = 0;
-        quotaIncreasedGroups.add(groupKey);
+        quotaResetGroups.add(groupKey);
+      } else if (resetTimePassed && quotaIncreased) {
+        // 重置时间已过且额度增加，清零计数
+        newRequestCounts[groupKey] = 0;
+        quotaResetGroups.add(groupKey);
       }
+      // 注意：如果重置时间未过，即使 API 返回的额度更高，也不重置计数
+      // 这避免了官方 API 返回值波动导致的误重置
     }
 
-    // 只有额度真正增加时才打印日志
-    if (quotaIncreasedGroups.size > 0) {
-      log.info(`[QuotaManager] 额度重置，清零请求计数: ${Array.from(quotaIncreasedGroups).join(', ')}`);
+    // 只有额度真正重置时才打印日志
+    if (quotaResetGroups.size > 0) {
+      log.info(`[QuotaManager] 额度重置（重置时间已过），清零请求计数: ${Array.from(quotaResetGroups).join(', ')}`);
     }
 
     this.cache.set(refreshToken, {
@@ -236,20 +244,24 @@ class QuotaManager {
 
     const groupKey = getGroupKey(modelId);
 
-    // 查找该组中任意模型的额度
+    // 使用该组的最小额度来判断（与 getModelGroupQuota 逻辑一致）
+    let minRemaining = null;
+
     for (const [id, quotaData] of Object.entries(data.models)) {
       const idGroupKey = getGroupKey(id);
       if (idGroupKey === groupKey) {
         const remaining = quotaData.r || 0;
-        // 如果额度为 0，返回 false
-        if (remaining <= 0) {
-          return false;
+        if (minRemaining === null || remaining < minRemaining) {
+          minRemaining = remaining;
         }
       }
     }
 
-    // 没有找到该组的模型，或者所有模型都有额度
-    return true;
+    // 没有找到该组的模型数据，假设有额度
+    if (minRemaining === null) return true;
+
+    // 该组最小额度为 0，说明额度耗尽
+    return minRemaining > 0;
   }
 
   /**
@@ -331,14 +343,25 @@ class QuotaManager {
    * 计算预估剩余请求次数
    * @param {number} remainingFraction - 剩余额度比例 (0-1)
    * @param {number} requestCount - 已使用的请求次数
+   * @param {string} [groupKey] - 模型系列 key（用于获取对应的消耗率）
    * @returns {number} 预估剩余请求次数
    */
-  calculateEstimatedRequests(remainingFraction, requestCount = 0) {
+  calculateEstimatedRequests(remainingFraction, requestCount = 0, groupKey = null) {
+    // 根据模型系列使用不同的消耗率
+    const costPercent = (groupKey && GROUP_COST_PERCENT[groupKey]) || REQUEST_COST_PERCENT;
     // 基于当前阈值计算总的可用次数
     const percentageValue = remainingFraction * 100;
-    const totalFromThreshold = Math.floor(percentageValue / REQUEST_COST_PERCENT);
+    const totalFromThreshold = Math.floor(percentageValue / costPercent);
     // 减去已记录的请求次数
     return Math.max(0, totalFromThreshold - requestCount);
+  }
+
+  /**
+   * 获取模型系列的消耗率配置（供前端使用）
+   * @returns {Object} 各系列的消耗率
+   */
+  static getGroupCostPercent() {
+    return { ...GROUP_COST_PERCENT };
   }
 
   cleanup() {

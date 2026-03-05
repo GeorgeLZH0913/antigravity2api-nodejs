@@ -150,11 +150,11 @@ router.get('/tokens', cookieAuthMiddleware, async (req, res) => {
 });
 
 router.post('/tokens', cookieAuthMiddleware, async (req, res) => {
-  const { access_token, refresh_token, expires_in, timestamp, enable, projectId, email } = req.body;
+  const { access_token, refresh_token, expires_in, timestamp, enable, projectId, email, sub } = req.body;
   if (!access_token || !refresh_token) {
     return res.status(400).json({ success: false, message: 'access_token和refresh_token必填' });
   }
-  const tokenData = { access_token, refresh_token, expires_in };
+  const tokenData = { access_token, refresh_token, expires_in, sub };
   if (timestamp) tokenData.timestamp = timestamp;
   if (enable !== undefined) tokenData.enable = enable;
   if (projectId) tokenData.projectId = projectId;
@@ -1010,7 +1010,8 @@ router.get('/tokens/:tokenId/quotas', cookieAuthMiddleware, async (req, res) => 
         // 缓存未命中或强制刷新，从API获取
         const quotas = await getModelsWithQuotas(tokenData);
         quotaManager.updateQuota(tokenId, quotas);
-        quotaData = { lastUpdated: Date.now(), models: quotas };
+        // 从缓存中获取完整数据（包含 requestCounts），而不是构造不完整的对象
+        quotaData = quotaManager.getQuota(tokenId) || { lastUpdated: Date.now(), models: quotas, requestCounts: {} };
       }
     }
 

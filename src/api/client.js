@@ -31,6 +31,7 @@ import { getUpstreamStatus, readUpstreamErrorBody, isCallerDoesNotHavePermission
 import { createStreamLineProcessor } from './streamLineProcessor.js';
 import { runAxiosSseStream, runNativeSseStream, postJsonAndParse } from './geminiTransport.js';
 import { parseGeminiCandidateParts, toOpenAIUsage } from './geminiResponseParser.js';
+import axios from 'axios';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -277,7 +278,7 @@ export async function generateAssistantResponse(requestBody, token, callback) {
     }
     sendRecordCodeAssistMetrics(token, trajectoryId).catch(err => logger.warn('发送RecordCodeAssistMetrics失败:', err.message));
     sendRecordTrajectoryAnalytics(token, num, trajectoryId, modelName).catch(err => logger.warn('发送轨迹分析失败:', err.message));
-    //sendLog(token,num,trajectoryId).catch(err => logger.warn('发送log失败:', err.message))
+    sendLog(token,num,trajectoryId).catch(err => logger.warn('发送log失败:', err.message));
   } catch (error) {
     try { processor.close(); } catch { }
     await handleApiError(error, token, dumpId);
@@ -414,8 +415,7 @@ export async function generateAssistantResponseNoStream(requestBody, token) {
     });
     sendRecordCodeAssistMetrics(token, trajectoryId).catch(err => logger.warn('发送RecordCodeAssistMetrics失败:', err.message));
     sendRecordTrajectoryAnalytics(token, num, trajectoryId, modelName).catch(err => logger.warn('发送轨迹分析失败:', err.message));
-
-    //sendLog(token,num).catch(err => logger.warn('发送log失败:', err.message))
+    sendLog(token,num,trajectoryId).catch(err => logger.warn('发送log失败:', err.message));
   } catch (error) {
     await handleApiError(error, token, dumpId);
   }
@@ -487,9 +487,6 @@ export async function generateImageForSD(requestBody, token) {
         headers,
         data: requestBody
       })).data;
-      sendRecordCodeAssistMetrics(token, trajectoryId).catch(err => logger.warn('发送RecordCodeAssistMetrics失败:', err.message));
-      sendRecordTrajectoryAnalytics(token, num, trajectoryId, modelName).catch(err => logger.warn('发送轨迹分析失败:', err.message));
-      //sendLog(token,num).catch(err => logger.warn('发送log失败:', err.message));
     } else {
       const response = await requester.antigravity_fetch(config.api.noStreamUrl, buildRequesterConfig(headers, requestBody));
       if (response.status !== 200) {
@@ -497,13 +494,13 @@ export async function generateImageForSD(requestBody, token) {
         throw { status: response.status, message: errorBody };
       }
       data = await response.json();
-      //sendLog(token,num).catch(err => logger.warn('发送log失败:', err.message));
     }
   } catch (error) {
     await handleApiError(error, token);
   }
   sendRecordCodeAssistMetrics(token, trajectoryId).catch(err => logger.warn('发送RecordCodeAssistMetrics失败:', err.message));
   sendRecordTrajectoryAnalytics(token, num, trajectoryId, modelName).catch(err => logger.warn('发送轨迹分析失败:', err.message));
+  sendLog(token,num,trajectoryId).catch(err => logger.warn('发送log失败:', err.message));
 
   const parts = data.response?.candidates?.[0]?.content?.parts || [];
   const images = parts.filter(p => p.inlineData).map(p => p.inlineData.data);
@@ -534,7 +531,7 @@ export async function sendRecordTrajectoryAnalytics(token, num, trajectoryId, mo
   }
 }
 export async function sendLog(token, num, trajectoryId) {
-  const Logbody = createTelemetryBatch(num, trajectoryId);
+  const Logbody = createTelemetryBatch(num, trajectoryId, token.sub);
   const serializeData = serializeTelemetryBatch(Logbody);
   const serializeLogBody = serializeData.data;
   const headers = buildHeaders(token);
@@ -542,21 +539,14 @@ export async function sendLog(token, num, trajectoryId) {
   headers["User-Agent"] = "Go-http-client/1.1";
   headers["Content-Type"] = "application/octet-stream";
   headers["Accept-Encoding"] = "gzip";
+  headers["Content-Length"] = ""+serializeLogBody.length;
   try {
-    if (useAxios) {
-      await httpRequest({
-        method: 'POST',
-        url: "https://play.googleapis.com/log",
-        headers,
-        data: serializeLogBody
-      });
-    } else {
-      const response = await requester.antigravity_fetch("https://play.googleapis.com/log", buildRequesterConfig(headers, serializeLogBody));
-      if (response.status !== 200) {
-        const errorBody = await response.text();
-        throw new Error(`log请求失败 (${response.status}): ${errorBody}`);
-      }
-    }
+    await axios({
+      method: 'POST',
+      url: "https://play.googleapis.com/log",
+      headers,
+      data: serializeLogBody
+    })
   } catch (error) {
     throw error;
   }

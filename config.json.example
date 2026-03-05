@@ -56,7 +56,7 @@
     "forceIPv4": false,
     "skipProjectIdFetch": false,
     "useNativeAxios": false,
-    "useContextSystemPrompt": true,
+    "useContextSystemPrompt": false,
     "officialPromptPosition": "before",
     "mergeSystemPrompt": false,
     "passSignatureToClient": false,
